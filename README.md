@@ -28,14 +28,14 @@ Issues:
 2. State changes before the API is connected are not reflected in the UI after the API connects.
 3. Even at the lowest priority, `on_boot` runs before the API is connected.
 4. The template_binary_sensor `motion` can be programatically controlled, but the gpio binary_sensor `pir` cannot.
-5. Awake from deep sleep is the same as RST or first boot; (non-RTC) memory is initialised from scratch and `setup()` is run, then `loop()` (these are Aduino IDE entry points implemented under-the-hood by ESPHome). I thought that power cycle would clear RTC memory, but it appears to be non-volatile (at least on my current test board) and survive power cycle, RST, OTA update, as well as deep sleep. This means it cannot be used to distinguish between deep sleep wake up and other types of start up. I had wanted to toggle 'motion' (see below) only on deep sleep wake up. 
+5. Awake from deep sleep is the same as RST or first boot; (non-RTC) memory is initialised from scratch and `setup()` is run, then `loop()` (these are Aduino IDE entry points implemented under-the-hood by ESPHome). I thought that power cycle would clear RTC memory, but it appears to be non-volatile (at least on my current test board) and survives power cycle, RST, OTA update, as well as deep sleep. This means it cannot be used to distinguish between deep sleep wake up and other types of start up. I had wanted to toggle 'motion' (see below) only on deep sleep wake up. 
 
 Solutions:
 
 1. Use template_binary_sensor `motion` as the high level motion sensor.
-2. Under normal operation (`state = 3` in the yaml) `pir` state changes are copied to `motion`.
+2. Under normal operation (`state == 3` in the yaml) `pir` state changes are copied to `motion`.
 3. When `pir` wakes the ESP32 `on_boot` is run. It waits for the HA api to connect (or timeout because we don't want to flatten the battery waiting too long) then runs `startup_motion_toggle`.
-4. `startup_motion_toggle` turns `motion` on then off (to reflect that `pir` has gone on and off before the HA api was connected) then sets normal operation (`state == 3` in the yaml).
+4. `startup_motion_toggle` turns `motion` on then off (to reflect that `pir` has gone on and off before the HA api was connected) then sets normal operation (`state = 3` in the yaml).
 5. `sleep_timer` is restarted when `pir` changes state. When it expires we enter deep sleep.
 
 Waiting for the HA API to connect is too slow for many applications e.g. to turn on a light for safety or start video recording for security. Using a static IP could shave a little off the WiFi connection time, but not enough to change this.
