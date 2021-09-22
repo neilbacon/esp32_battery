@@ -1,18 +1,20 @@
 # Battery Powered IoT Devices
 
 ## Goal
-To build ESP32 based IoT devices that run as long as possible on a battery. 
+
+1. To build [ESP32](http://esp32.net/) based IoT devices for [Home Assistant (HA)](https://www.home-assistant.io/), that run as long as possible on a battery.
+2. To get as close as possible to the responsiveness of battery powered Z-Wave binary sensors such as my [AEON Labs, MultiSensor 6](https://aeotec.com/aeotec.com/z-wave-sensor/index.html), model ZW100, Firmware: 1.10, which can run for months off batteries and update a motion sensor in HA UI in about 1s.
 
 ## Introduction
 
-Having the ESP32 in deep sleep mode most of the time and paying attention to the power draw of any components still powered in this mode seems like a good place to start.
+Having the ESP32 in deep sleep mode most of the time and paying attention to the power draw of any components still powered in this mode seems like a good place to start, but responsiveness from deep sleep is an issue. 
 
 [Guide to Reduce the ESP32 Power Consumption by 95%](https://diyi0t.com/reduce-the-esp32-power-consumption/) shows that of the boards tested, DFRobot's FireBeetle has the lowest deep sleep power draw. It also has a connector and charger (from USB power) for a 3.7V Lipoly battery. 
 
 We are using [Home Assistant (HA)](https://www.home-assistant.io/) as the IoT hub/controller/user interface and generate firmware with:
 
- - [ESPHome](https://esphome.io/) for IoT using Wifi; and 
- - [Arduino IDE](https://www.arduino.cc/en/Main/Software_) for IoT firmware using Bluetooth LE (without WiFi). 
+ - [ESPHome](https://esphome.io/) for IoT firmware using Wifi; and 
+ - [Arduino IDE](https://www.arduino.cc/en/Main/Software_) for IoT firmware using [Bluetooth LE](https://en.wikipedia.org/wiki/Bluetooth_Low_Energy) (without WiFi). 
 
 ## Experiment 1
 
@@ -24,28 +26,28 @@ This uses an [AS312 (AM312) Mini PIR module](https://unusualelectronics.co.uk/as
 
 ### Firmware
 
-`esppir1.yaml` is the ESPHome input file for our first firmware, which usies the HA native API.
+`esppir1.yaml` is the ESPHome input file for our first firmware, which uses the HA native API.
 
 LED usage:
 
-- Red: switch name `awake`, indicates the ESP32 is awake 
-- Yellow: switch name `stay_awake`, indicates deep sleep is inhibited e.g. to facilitate OTA updates. 
+- Red: connected to switch `awake`; turned on after waking up; turned off before deep sleep
+- Yellow: connected to switch `stay_awake`; HA user turns on to inhibit deep sleep e.g. to facilitate OTA updates. 
 
 ### Issues
 
 1. PIR sensor on duration (1 sec) is shorter than the time it takes the ESP32 to startup and the HA api to connect to it. WiFi connection takes 1-2 secs, but it is ~6 secs before the HA API is connected and a change in state is reflected in the HA UI. 
 2. State changes before the API is connected are not reflected in the UI after the API connects.
 3. Even at the lowest priority, `on_boot` runs before the HA API is connected.
-4. The template_binary_sensor `motion` can be programatically controlled, but the gpio binary_sensor `pir` cannot.
+4. The [template binary\_sensor](https://esphome.io/components/binary_sensor/template.html) `motion` can be programatically controlled, but the gpio binary_sensor `pir` cannot.
 5. Awake from deep sleep is the same as RST or first boot; (non-RTC) memory is initialised and `setup()` is run, then `loop()` (these are Aduino IDE entry points implemented under-the-hood by ESPHome). I thought that power cycle would clear RTC memory, but it appears to be non-volatile (at least on my current test board) and survives power cycle, RST, OTA update, as well as deep sleep. This means it cannot be used to distinguish between deep sleep wake up and other types of start up. I had wanted to toggle `motion` (see below) only on deep sleep wake up. 
 
-### Solutions
+### Design
 
-1. Use template_binary_sensor `motion` as the high level motion sensor.
+1. Use [template binary\_sensor](https://esphome.io/components/binary_sensor/template.html) `motion` as the high level motion sensor.
 2. Under normal operation (`state == 3` in the yaml) `pir` state changes are copied to `motion`.
 3. When `pir` wakes the ESP32 `on_boot` is run. It waits for the HA api to connect (or timeout because we don't want to flatten the battery waiting too long) then runs `startup_motion_toggle`.
 4. `startup_motion_toggle` turns `motion` on then off (to reflect that `pir` has gone on and off before the HA api was connected) then sets normal operation (`state = 3` in the yaml).
-5. `sleep_timer` is restarted when `pir` changes state. When it expires we enter deep sleep.
+5. `sleep_timer` is restarted when `pir` changes state. When it expires we enter deep sleep (unless `stay_awake` is on).
 
 ### Conclusion
 
@@ -61,7 +63,7 @@ Same as `Experiment 1`.
 
 ### Firmware
 
-`esppir2.yaml` is the ESPHome input file for our second firmware, this time using a static IP address and MQTT instead of the HA native API. LED usage is the same as in `Experiment 1`. As the MQTT connection is under the control of the IoT device (rather that waiting for HA to poll it) it should be quicker to establish. The logic is simpler without any need for the template_binary_sensor `motion` and the `state` variable.
+`esppir2.yaml` is the ESPHome input file for our second firmware, this time using a static IP address and MQTT instead of the HA native API. LED usage is the same as in `Experiment 1`. As the MQTT connection is under the control of the IoT device (rather that waiting for HA to poll it) it should be quicker to establish. The logic is simpler without any need for the template binary_sensor `motion` and the `state` variable.
 
 ### Issues
 
@@ -69,7 +71,7 @@ Same as `Experiment 1`.
 2. No MQTT message is generated for the PIR on event that awakens the ESP32. A corresponding PIR off MQTT message is generated.
 3. Turning the `awake` switch off and then immediately entering deep sleep, the change of switch state is not reflected in the HA UI (the corresponding MQTT message is not sent).   
 
-### Solutions
+### Design
 
 1. In `on_boot` we manually send the missing PIR on MQTT message. The automatic PIR off MQTT message is transmitted immediately afterwards, so the on duration is very short. 
 2. A 300ms delay between turning the `awake` switch off and entering deep sleep appears to be sufficient for the change of switch state to be reflected in the HA UI. 100ms is not sufficient.

@@ -134,17 +134,3 @@ deep_sleep:
   wakeup_pin: GPIO39
   wakeup_pin_mode: IGNORE
 
-# This board has no built-in LED on GPIO2
-#output:
-#  - platform: gpio
-#    pin:
-#      number: GPIO2
-#      inverted: False
-#    id: gpio_2
-#
-#light:
-#  - platform: binary
-#    output: gpio_2
-#    name: $hostname Blue LED
-#    id: ${hostname}_blue_led
-
