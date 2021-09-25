@@ -14,7 +14,7 @@ Having the ESP32 in deep sleep mode most of the time and paying attention to the
 We are using [Home Assistant (HA)](https://www.home-assistant.io/) as the IoT hub/controller/user interface and generate firmware with:
 
  - [ESPHome](https://esphome.io/) for IoT firmware using Wifi; and 
- - [Arduino IDE](https://www.arduino.cc/en/Main/Software_) for IoT firmware using [Bluetooth LE](https://en.wikipedia.org/wiki/Bluetooth_Low_Energy) (without WiFi). 
+ - [Arduino IDE](https://www.arduino.cc/en/Main/Software_) for IoT firmware using [Bluetooth Low Energy (BLE)](https://en.wikipedia.org/wiki/Bluetooth_Low_Energy) (without WiFi). 
 
 ## Experiment 1
 
@@ -26,7 +26,7 @@ This uses an [AS312 (AM312) Mini PIR module](https://unusualelectronics.co.uk/as
 
 ### Firmware
 
-`esppir1.yaml` is the ESPHome input file for our first firmware, which uses the HA native API.
+`esphome/esppir1.yaml` is the ESPHome input file for our first firmware, which uses the HA native API.
 
 LED usage:
 
@@ -41,7 +41,7 @@ LED usage:
 4. The [template binary\_sensor](https://esphome.io/components/binary_sensor/template.html) `motion` can be programatically controlled, but the gpio binary_sensor `pir` cannot.
 5. Awake from deep sleep is the same as RST or first boot; (non-RTC) memory is initialised and `setup()` is run, then `loop()` (these are Aduino IDE entry points implemented under-the-hood by ESPHome). I thought that power cycle would clear RTC memory, but it appears to be non-volatile (at least on my current test board) and survives power cycle, RST, OTA update, as well as deep sleep. This means it cannot be used to distinguish between deep sleep wake up and other types of start up. I had wanted to toggle `motion` (see below) only on deep sleep wake up. 
 
-### Design
+### Implementation
 
 1. Use [template binary\_sensor](https://esphome.io/components/binary_sensor/template.html) `motion` as the high level motion sensor.
 2. Under normal operation (`state == 3` in the yaml) `pir` state changes are copied to `motion`.
@@ -63,7 +63,7 @@ Same as `Experiment 1`.
 
 ### Firmware
 
-`esppir2.yaml` is the ESPHome input file for our second firmware, this time using a static IP address and MQTT instead of the HA native API. LED usage is the same as in `Experiment 1`. As the MQTT connection is under the control of the IoT device (rather that waiting for HA to poll it) it should be quicker to establish. The logic is simpler without any need for the template binary_sensor `motion` and the `state` variable.
+`esphome/esppir2.yaml` is the ESPHome input file for our second firmware, this time using a static IP address and MQTT instead of the HA native API. LED usage is the same as in `Experiment 1`. As the MQTT connection is under the control of the IoT device (rather that waiting for HA to poll it) it should be quicker to establish. The logic is simpler without any need for the template binary_sensor `motion` and the `state` variable.
 
 ### Issues
 
@@ -71,7 +71,7 @@ Same as `Experiment 1`.
 2. No MQTT message is generated for the PIR on event that awakens the ESP32. A corresponding PIR off MQTT message is generated.
 3. Turning the `awake` switch off and then immediately entering deep sleep, the change of switch state is not reflected in the HA UI (the corresponding MQTT message is not sent).   
 
-### Design
+### Implementation
 
 1. In `on_boot` we manually send the missing PIR on MQTT message. The automatic PIR off MQTT message is transmitted immediately afterwards, so the on duration is very short. 
 2. A 300ms delay between turning the `awake` switch off and entering deep sleep appears to be sufficient for the change of switch state to be reflected in the HA UI. 100ms is not sufficient.
@@ -80,11 +80,57 @@ Same as `Experiment 1`.
 
 This is marginally faster (and simpler) than `Experiment 1`, but still too slow for many applications.
 
+## Experiment 3
+
+### Hardware
+
+Same as `Experiment 1`.
+
+### Firmware
+
+`arduinoIde/BLE_server3.ino` is the Arduino IDE source file for our third firmware, this time implementing a [Bluetooth Low Energy (BLE)](https://en.wikipedia.org/wiki/Bluetooth_Low_Energy) server (with no WiFi).
+
+### Issues
+
+1. The [esphome BLE client](https://esphome.io/components/sensor/ble_client.html) can't use Bluetooth security (pair with a PIN) and requires the server MAC address to be configured, which is rather limiting.
+2. A proxy will be required to implement the BLE client and send the data to HA (using either the HA native API or MQTT, so it requires WiFi). The proxy would need to be always awake (no deep sleep) and so not battery powered. Using an ESP32 as the proxy, each could handle up to three BLE servers (a limitation of the ESP32 Bluetooth stack). 
+3. What happens with multiple simultaneous clients?
+
+### Implementation
+
+This BLE server:
+
+- waits for client connection, enters deep sleep if it doesn't happen by `TIME_CONNECT`
+- notifies motion updates, enters deep sleep after `TIME_NOTIFY` since the last update.
+
+After a deep sleep it restarts from scratch and the client must reconnect.
+
+### Test Client
+
+The `nRF Connect` app (on an Android or Apple mobile device) is suitable as a test client. 
+With an unpaired client, the sequence of events is:
+
+1. `setup()` completes
+2. `loop()` called repeatedly 
+3. when the client connects: `MyServerCallbacks::onConnect` is called
+4. when the client says yes, pair with the device: `MySecurity::onPassKeyNotify` prints a random PIN
+5. when the client enters this PIN: `MySecurity::onAuthenticationComplete` is called
+6. the client can then poll or elect to recieve notifications
+ 
+With a previously paired client, the sequence is the same except without step 4.
+This sequence, from server wakeup through to the client receiving notifications, can complete in about 1s. 
+ 
+### Conclusion
+
+This matches our goal of achieving close to the responsiveness of Z-Wave devices. 
+
 ## Next steps
 
-1. Make a low power binary_sensor using a Bluetooth LE server (no WiFi) and deep sleep. Esphome can't run without WiFi, but it's easy enough with Arduino IDE. 
-2. The same connection time issue will arise. A phone app 'nRF Connect' can be used as a test client. Another non-battery powered ESP32 will be needed as a proxy to connect to up to 3 Bluetooth LE servers (Arduino ESP32 BLE stack can't handle more than 3) and relay to HA via WiFi.
-3. BLE mesh networking sounds interesting; Arduino IDE can't do it; Exspressif IDE can but it sounds complicated to implement. 
+1. Implement the required proxy to connect the BLE server to HA.
+2. BLE mesh networking sounds interesting; Arduino IDE can't do it; Exspressif IDE can but it sounds complicated to implement. 
     
+
+
+
 
 
