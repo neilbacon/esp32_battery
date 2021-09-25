@@ -1,0 +1,146 @@
+substitutions:
+  hostname: 'esppir1'
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: True
+
+ota:
+  password: !secret ota_password
+
+api:
+  reboot_timeout: 15min
+  password: !secret api_password
+
+logger:
+  level: DEBUG
+  
+globals:
+   - id: state
+     type: int
+     restore_value: yes   # yes = RTC memory, due to issue 6 it doesn't matter whether we use RTC memory or not
+     initial_value: '0'   # 0 = boot from power on, 1 = wakeup from PIR on, 2 = api.connected or timed-out, 3 = normal processing
+
+esphome:
+  name: $hostname
+  platform: ESP32
+  board: esp32dev
+  on_boot:
+    then:
+      - switch.turn_on: ${hostname}_awake
+#     comment out following line after successfully adding to HA. Having it automatically entering deep sleep prior to that is a pain
+      - switch.turn_on: ${hostname}_stay_awake
+      - lambda: "id(state) = 1;"
+      - script.execute: await_api
+      - script.execute: await_timeout
+      - wait_until:
+          not:
+            and:
+              - script.is_running: await_api
+              - script.is_running: await_timeout
+      - lambda: "id(state) = 2;"
+      - script.execute: startup_motion_toggle
+
+switch:
+  - platform: gpio
+    id: ${hostname}_stay_awake
+    name: $hostname Stay Awake # turn on from UI to prevent deep sleep e.g. for OTA update
+    pin: GPIO25
+  - platform: gpio
+    id: ${hostname}_awake
+    name: $hostname Awake # turn on to indicate awake
+    pin: GPIO26
+    restore_mode: ALWAYS_OFF
+  - platform: restart
+    name: $hostname Restart
+
+esp32_touch:
+  setup_mode: false
+
+sensor:
+  - platform: wifi_signal
+    name: $hostname WiFi Signal
+
+binary_sensor:
+  - platform: gpio
+    id: ${hostname}_pir
+    name: $hostname PIR
+    pin: GPIO39
+    on_state: # on any state change, update motion
+      then:
+        - if:
+            condition:
+              lambda: "return id(state) == 3;"
+            then:
+              - lambda: "id(${hostname}_motion).publish_state(x);"
+              - script.execute: sleep_timer
+  - platform: esp32_touch
+    name: $hostname Touch Stay Awake
+    pin: GPIO32
+    threshold: 1000
+    on_press:
+      then:
+        - switch.toggle: ${hostname}_stay_awake
+  - platform: template
+    id: ${hostname}_motion
+    name: $hostname Motion
+
+script:
+  - id: startup_motion_toggle
+    mode: single
+    then:
+      - lambda: "id(${hostname}_motion).publish_state(true);"
+      - delay: 2s
+      - lambda: |-
+          id(${hostname}_motion).publish_state(false);
+          id(state) = 3;
+      - script.execute: sleep_timer
+  - id: await_api
+    mode: single
+    then:
+      - wait_until:
+          api.connected
+      - logger.log:
+          format: "api connected"
+          tag: await_api
+  - id: await_timeout
+    mode: single
+    then:
+      - delay: 30s
+      - logger.log:
+          format: "api connection timeout"
+          tag: await_timeout
+  - id: sleep_timer
+    mode: restart
+    then:
+      - delay: 10s
+      - if:
+          condition:
+            and:
+              - switch.is_off: ${hostname}_stay_awake
+              - binary_sensor.is_off: ${hostname}_pir
+          then:
+            - switch.turn_off: ${hostname}_awake
+            - lambda: "id(state) = 1;"
+            - logger.log:
+                format: "state = %d"
+                args: [ 'id(state)' ]
+                tag: sleep_timer
+            #- delay: 3s
+            - if:
+                condition:
+                  binary_sensor.is_off: ${hostname}_pir
+                then:
+                  - deep_sleep.enter:
+                     id: sleeper
+                else:
+                  - script.execute: startup_motion_toggle # get back to normal operation (state == 3)
+          else:
+            - script.execute: sleep_timer
+
+deep_sleep:
+  id: sleeper
+  wakeup_pin: GPIO39
+  wakeup_pin_mode: IGNORE
+
