@@ -92,21 +92,23 @@ This is marginally faster (and simpler) than `Experiment 1`, but still too slow 
 
 ## Experiment 3
 
-### Hardware
+### BLE Server
+
+#### Hardware
 
 Same as `Experiment 1`.
 
-### Firmware
+#### Firmware
 
-`arduinoIde/BLE_server3.ino` is the Arduino IDE source file for our third firmware, this time implementing a [Bluetooth Low Energy (BLE)](https://en.wikipedia.org/wiki/Bluetooth_Low_Energy) server (with no WiFi).
+`arduinoIde/BLE_server.ino` is the Arduino IDE source file for our third firmware, this time implementing a [Bluetooth Low Energy (BLE)](https://en.wikipedia.org/wiki/Bluetooth_Low_Energy) server (with no WiFi).
 
-### Issues
+#### Issues
 
 1. The [esphome BLE client](https://esphome.io/components/sensor/ble_client.html) can't use Bluetooth security (pair with a PIN) and requires the server MAC address to be configured, which is rather limiting.
 2. A proxy will be required to implement the BLE client and send the data to HA (using either the HA native API or MQTT, so it requires WiFi). The proxy would need to be always awake (no deep sleep) and so not battery powered. Using an ESP32 as the proxy, each could handle up to three BLE servers (a limitation of the ESP32 Bluetooth stack). 
 3. What happens with multiple simultaneous clients?
 
-### Implementation
+#### Implementation
 
 This BLE server:
 
@@ -117,7 +119,7 @@ After a deep sleep it restarts from scratch and the client must reconnect.
 
 PIR, LED and touch input usage is the same as in `Experiment 1`.
 
-### Test Client
+#### Test Client
 
 The `nRF Connect` app (on an Android or Apple mobile device) is suitable as a test client. 
 With an unpaired client, the sequence of events is:
@@ -132,13 +134,32 @@ With an unpaired client, the sequence of events is:
 With a previously paired client, the sequence is the same except without step 4.
 This sequence, from server wakeup through to the client receiving notifications, can complete in about 1s. 
  
-### Conclusion
+#### Conclusion
 
 This matches our goal of achieving close to the responsiveness of Z-Wave devices. 
 
+### BLE Server
+
+#### Hardware
+
+A bare ESP-WROOM-32 board. 
+
+#### Firmware
+
+`arduinoIde/BLE_client.ino` is the Arduino IDE source file, this time implementing a [Bluetooth Low Energy (BLE)](https://en.wikipedia.org/wiki/Bluetooth_Low_Energy) client. At the moment it has  no WiFi, but this will be needed later to communicate with HA.
+
+#### Issues
+
+
+#### Implementation
+
+At the moment BLE security is not implemented. 
+
 ## Next steps
 
-1. Implement the required proxy to connect the BLE server to HA.
+1. Add BLE security to the client.
+2. Change the server to only allow connection with security.
+3. Add WiFi and HA API or MQTT to the client.
 2. BLE mesh networking sounds interesting; Arduino IDE can't do it; Exspressif IDE can but it sounds complicated to implement. 
     
 
