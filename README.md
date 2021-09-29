@@ -28,10 +28,20 @@ This uses an [AS312 (AM312) Mini PIR module](https://unusualelectronics.co.uk/as
 
 `esphome/esppir1.yaml` is the ESPHome input file for our first firmware, which uses the HA native API.
 
-LED usage:
+PIR:
+
+- exposed as binary_sensor `pir`
+
+LEDs:
 
 - Red: connected to switch `awake`; turned on after waking up; turned off before deep sleep
-- Yellow: connected to switch `stay_awake`; HA user turns on to inhibit deep sleep e.g. to facilitate OTA updates. 
+- Yellow: connected to switch `stay_awake`; turned on to inhibit deep sleep e.g. to facilitate OTA updates.
+
+Touch input:
+
+- Touching the exposed end of the yellow wire on GPIO32 toggles the switch `stay_awake`.
+
+
 
 ### Issues
 
@@ -63,7 +73,7 @@ Same as `Experiment 1`.
 
 ### Firmware
 
-`esphome/esppir2.yaml` is the ESPHome input file for our second firmware, this time using a static IP address and MQTT instead of the HA native API. LED usage is the same as in `Experiment 1`. As the MQTT connection is under the control of the IoT device (rather that waiting for HA to poll it) it should be quicker to establish. The logic is simpler without any need for the template binary_sensor `motion` and the `state` variable.
+`esphome/esppir2.yaml` is the ESPHome input file for our second firmware, this time using a static IP address and MQTT instead of the HA native API. PIR, LED and touch input usage is the same as in `Experiment 1`. As the MQTT connection is under the control of the IoT device (rather that waiting for HA to poll it) it should be quicker to establish. The logic is simpler without any need for the template binary_sensor `motion` and the `state` variable.
 
 ### Issues
 
@@ -104,6 +114,8 @@ This BLE server:
 - notifies motion updates, enters deep sleep after `TIME_NOTIFY` since the last update.
 
 After a deep sleep it restarts from scratch and the client must reconnect.
+
+PIR, LED and touch input usage is the same as in `Experiment 1`.
 
 ### Test Client
 
